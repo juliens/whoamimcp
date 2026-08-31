@@ -12,9 +12,11 @@ import (
 )
 
 var addr string
+var legacy bool
 
 func main() {
 	flag.StringVar(&addr, "addr", ":80", "http service address")
+	flag.BoolVar(&legacy, "legacy", false, "use legacy mode")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -25,26 +27,29 @@ type HiArgs struct {
 	Name string `json:"name" jsonschema:"the name to say hi to"`
 }
 
-func SayHi(ctx context.Context, ss *mcp.ServerSession, params *mcp.CallToolParamsFor[HiArgs]) (*mcp.CallToolResultFor[struct{}], error) {
+func SayHi(ctx context.Context, req *mcp.CallToolRequest, args HiArgs) (
+	*mcp.CallToolResult,
+	any,
+	error) {
 	name, _ := os.Hostname()
-	return &mcp.CallToolResultFor[struct{}]{
+	return &mcp.CallToolResult{
 		Content: []mcp.Content{
-			&mcp.TextContent{Text: fmt.Sprintf("Hello, %s from %s %s!", params.Arguments.Name, name, addr)},
+			&mcp.TextContent{Text: fmt.Sprintf("Hello, %s from %s %s!", args.Name, name, addr)},
 		},
-	}, nil
+	}, nil, nil
 }
 
-func PromptHi(ctx context.Context, ss *mcp.ServerSession, params *mcp.GetPromptParams) (*mcp.GetPromptResult, error) {
+func PromptHi(ctx context.Context, params *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 	return &mcp.GetPromptResult{
 		Description: "Code review prompt",
 		Messages: []*mcp.PromptMessage{
-			{Role: "user", Content: &mcp.TextContent{Text: fmt.Sprintf("Say hi to %s from %s", params.Arguments["name"], addr)}},
+			{Role: "user", Content: &mcp.TextContent{Text: fmt.Sprintf("Say hi to %s from %s", params.Params.Arguments["name"], addr)}},
 		},
 	}, nil
 }
 
 func startServer(ctx context.Context) error {
-	server := mcp.NewServer(&mcp.Implementation{Name: "greeter_s1"}, nil)
+	server := mcp.NewServer(&mcp.Implementation{Name: "greeter_s1"}, &mcp.ServerOptions{})
 	mcp.AddTool(server, &mcp.Tool{Name: "greet", Description: "say hi"}, SayHi)
 	server.AddPrompt(&mcp.Prompt{Name: "greet"}, PromptHi)
 
@@ -56,7 +61,9 @@ func startServer(ctx context.Context) error {
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: !legacy,
+	})
 	log.Printf("MCP Server handler listening at %s", addr)
 
 	return http.ListenAndServe(addr, http.HandlerFunc(func(rw http.ResponseWriter, req *http.Request) {
