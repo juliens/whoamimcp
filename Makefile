@@ -13,8 +13,5 @@ test:
 check:
 	golangci-lint run
 
-image: build
-	docker build -t $(IMAGE_NAME) . -f ./buildx.Dockerfile
-
-protoc:
-	 protoc --proto_path . ./grpc.proto --go-grpc_out=./ --go_out=./
+image:
+	docker build -t $(IMAGE_NAME) .
